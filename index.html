@@ -1,0 +1,139 @@
+<meta name="theme-color" content="#F6D9D2">
+  <title>Ring Sort · Storybook Bakery</title>
+  <link rel="stylesheet" href="game.css">
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="preload" href="art/bakery/splash.webp" as="image">
+  <link rel="preload" href="art/bakery/lobby-bg.webp" as="image">
+  <link rel="preload" href="art/bakery/play-bg.webp" as="image">
+  <script type="module" src="game.mjs"></script>
+<style>:root{padding:0!important}html,body{height:100%;margin:0}</style>
+<script>document.documentElement.dataset.build="ac67135-r14";document.addEventListener("DOMContentLoaded",()=>document.body.classList.add("mobile-game"));</script>
+<script>document.body&&document.body.classList.add("mobile-game")</script>
+
+  <div id="splash" class="splash" role="status" aria-label="Loading Ring Sort">
+    <p class="splash-text">Warming up the bakery<span class="dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p>
+  </div>
+  <main class="phone" id="phone" aria-label="Ring Sort">
+    <div id="inset-probe" class="inset-probe" aria-hidden="true"></div>
+    <div class="scene" aria-hidden="true">
+      <img class="play-bg" id="play-bg" src="art/bakery/play-bg.webp" alt="" decoding="async">
+      <div class="pegs" id="pegs"></div>
+    </div>
+    <div id="instruction" class="bubble" aria-hidden="true" hidden>
+      <img class="bubble-chef" src="art/bakery/chef-thinking.webp" alt="" width="54" height="136" decoding="async">
+      <p id="instruction-text">Getting the donuts ready.</p>
+    </div>
+    <p id="announce" class="sr-only" aria-live="polite" role="status">Getting the donuts ready.</p>
+    <div id="guide" class="guide" aria-hidden="true" hidden></div>
+    <div id="fx" class="fx" aria-hidden="true"></div>
+    <section id="board" class="board" aria-label="Sorting board"></section>
+    <header class="hud">
+      <div class="hud-pills">
+        <div id="moves-chip" class="moves-pill" role="status"><strong id="moves" class="pill-num">0</strong><span>moves</span></div>
+        <div id="coins-chip" class="coins-pill" role="img" aria-label="Coins, coming soon"><img src="art/bakery/coin.webp" alt="" width="26" height="26"><span id="coins" class="pill-num">0</span></div>
+      </div>
+      <div class="level-ribbon"><p id="level-label">LEVEL 1</p><h1 id="level-title">Bakery</h1></div>
+      <button id="home" class="round-btn home-btn hud-gear" type="button" aria-label="Home, back to the lobby"></button>
+    </header>
+    <div id="note" class="note" role="status" hidden>
+      <p>This level was updated. Restart to play the new version.</p>
+      <button id="note-restart" type="button" class="note-action">Restart on new version</button>
+      <button id="note-close" type="button" class="note-close" aria-label="Dismiss"></button>
+    </div>
+    <footer class="bar">
+      <button id="undo" class="bar-btn" type="button" disabled><img class="round-face" src="art/bakery/btn-undo.webp" alt="" width="56" height="56"><span class="cap-text">Undo</span></button>
+      <button id="restart" class="bar-btn" type="button"><img class="round-face" src="art/bakery/btn-restart.webp" alt="" width="56" height="56"><span class="cap-text">Restart</span></button>
+      <button id="hint" class="bar-btn soon" type="button" aria-disabled="true" aria-label="Hint, coming soon"><img class="round-face" src="art/bakery/btn-hint.webp" alt="" width="56" height="56"><span class="cap-text">Hint</span><span class="soon-tag" aria-hidden="true">soon</span></button>
+      <button id="add-peg" class="bar-btn soon" type="button" aria-disabled="true" aria-label="Extra peg, coming soon"><img class="round-face" src="art/bakery/btn-plus.webp" alt="" width="56" height="56"><span class="cap-text">+Peg</span><span class="soon-tag" aria-hidden="true">soon</span></button>
+    </footer>
+    <div id="fx-top" class="fx-top" aria-hidden="true"></div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <section id="lobby" class="lobby" aria-label="Home" hidden>
+      <img class="lobby-bg" src="art/bakery/lobby-bg.webp" alt="" decoding="async">
+      <div class="lobby-top">
+        <div class="coins-pill" role="img" aria-label="Coins, coming soon"><img src="art/bakery/coin.webp" alt="" width="26" height="26"><span id="lobby-coins" class="pill-num">0</span></div>
+        <button id="lobby-settings" class="round-btn" type="button" aria-label="Settings"><img src="art/bakery/btn-gear.webp" alt="" width="48" height="48"></button>
+      </div>
+      <div class="level-ribbon lobby-ribbon"><p id="lobby-level">LEVEL 1</p></div>
+      <div class="lobby-stage" aria-hidden="true">
+        <div class="sparkles"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <img class="lobby-chef" src="art/bakery/chef-main.webp" alt="" width="364" height="600" decoding="async">
+      </div>
+      <div class="lobby-actions">
+        <button id="lobby-play" class="pill-btn lobby-play" type="button"><span>Play</span></button>
+        <button id="lobby-levels" class="soft-btn lobby-levels" type="button"><img src="art/bakery/btn-play-round.webp" alt="" width="34" height="34"><span>Levels</span></button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="win-dialog" class="panel win-screen" aria-labelledby="win-title">
+    <div class="card">
+      <div class="win-ribbon"><h2 id="win-title">Nicely sorted!</h2></div>
+      <img class="win-chef" src="art/bakery/chef-celebrate.webp" alt="" width="174" height="300" decoding="async">
+      <div class="win-panel">
+        <div id="win-stars" class="win-stars" role="img"></div>
+        <p id="win-moves" class="win-moves"></p>
+        <p class="win-coins" aria-label="Coins, coming soon"><img src="art/bakery/coin.webp" alt="" width="28" height="28"><span id="win-coins">+0</span></p>
+        <p id="win-kept" class="win-kept" hidden></p>
+      </div>
+      <button id="win-next" class="pill-btn" type="button"><span id="win-next-label">Next</span></button>
+      <div class="win-row">
+        <button id="win-replay" class="soft-btn" type="button"><img src="art/bakery/btn-restart.webp" alt="" width="34" height="34"><span>Replay</span></button>
+        <button id="win-levels" class="soft-btn" type="button"><img src="art/bakery/btn-play-round.webp" alt="" width="34" height="34"><span>Levels</span></button>
+        <button id="win-home" class="soft-btn home-soft" type="button" aria-label="Home, back to the lobby"><span class="home-face"></span><span>Home</span></button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="stuck-dialog" class="sheet stuck-sheet" aria-labelledby="stuck-title">
+    <div class="card">
+      <img class="chef-pop" src="art/bakery/chef-oops.webp" alt="" width="62" height="150" decoding="async">
+      <h2 id="stuck-title">Oops, out of moves</h2>
+      <p>No donut can move right now. Step back a move, or start this level again.</p>
+      <div class="sheet-actions">
+        <button id="stuck-undo" class="wide-btn honey" type="button">Undo</button>
+        <button id="stuck-restart" class="wide-btn mint" type="button">Restart</button>
+      </div>
+      <button id="stuck-home" class="soft-btn home-soft stuck-home" type="button" aria-label="Home, back to the lobby"><span class="home-face"></span><span>Home</span></button>
+    </div>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="sheet confirm-sheet" aria-labelledby="confirm-title">
+    <div class="card">
+      <img class="chef-pop" src="art/bakery/chef-oops.webp" alt="" width="62" height="150" decoding="async">
+      <h2 id="confirm-title">Restart this level?</h2>
+      <p id="confirm-text"></p>
+      <div class="sheet-actions">
+        <button id="confirm-cancel" class="wide-btn honey" type="button">Keep playing</button>
+        <button id="confirm-ok" class="wide-btn mint" type="button"><span id="confirm-ok-label">Restart</span></button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="settings-dialog" class="sheet settings-sheet" aria-labelledby="settings-title">
+    <div class="card">
+      <div class="sheet-head"><h2 id="settings-title">Settings</h2><button id="settings-close" class="close-btn" type="button" aria-label="Close settings"></button></div>
+      <div id="settings-list" class="settings-list"></div>
+      <div class="sheet-actions">
+        <button id="map-open" class="wide-btn honey" type="button">Levels</button>
+        <button id="settings-done" class="wide-btn go" type="button">Done</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="map-dialog" class="screen map-screen" aria-labelledby="map-title">
+    <div class="card">
+      <header class="map-head">
+        <div class="map-title-pill"><h2 id="map-title">Levels</h2><p id="map-progress">0 of 100 sorted</p></div>
+        <p class="map-star-total" role="img" aria-label="Stars earned"><img src="art/bakery/star.webp" alt="" width="22" height="21"><span id="map-stars">0 / 300</span></p>
+        <button id="map-close" class="close-btn" type="button" aria-label="Close levels"></button>
+      </header>
+      <div id="map-scroll" class="map-scroll"><nav id="map-path" class="map-path" aria-label="Choose a level"></nav></div>
+    </div>
+  </dialog>
+
+  <div class="rotate" role="alert">
+    <div class="rotate-card"><span id="rotate-icon" class="rotate-icon"></span><p>Turn your phone upright to keep sorting.</p></div>
+  </div>

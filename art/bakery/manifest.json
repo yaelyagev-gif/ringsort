@@ -1,0 +1,362 @@
+{
+ "source": "references/owner-art/ (owner, final, approved)",
+ "tool": "tools/art/build_bakery.py",
+ "total_bytes": 1174388,
+ "files": {
+  "bar-2.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    501,
+    628,
+    799,
+    703
+   ],
+   "size": [
+    298,
+    75
+   ],
+   "bytes": 5662,
+   "alpha": true
+  },
+  "bar.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    501,
+    551,
+    799,
+    625
+   ],
+   "size": [
+    298,
+    74
+   ],
+   "bytes": 5030,
+   "alpha": true
+  },
+  "btn-gear.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    670,
+    188,
+    837,
+    358
+   ],
+   "size": [
+    167,
+    170
+   ],
+   "bytes": 7766,
+   "alpha": true
+  },
+  "btn-hint.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    348,
+    189,
+    513,
+    359
+   ],
+   "size": [
+    165,
+    170
+   ],
+   "bytes": 7932,
+   "alpha": true
+  },
+  "btn-play-round.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    833,
+    189,
+    999,
+    359
+   ],
+   "size": [
+    166,
+    170
+   ],
+   "bytes": 7236,
+   "alpha": true
+  },
+  "btn-plus.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    509,
+    189,
+    674,
+    358
+   ],
+   "size": [
+    165,
+    169
+   ],
+   "bytes": 7974,
+   "alpha": true
+  },
+  "btn-restart.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    185,
+    189,
+    352,
+    358
+   ],
+   "size": [
+    167,
+    169
+   ],
+   "bytes": 7390,
+   "alpha": true
+  },
+  "btn-undo.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    22,
+    189,
+    189,
+    358
+   ],
+   "size": [
+    167,
+    169
+   ],
+   "bytes": 7226,
+   "alpha": true
+  },
+  "chef-celebrate.webp": {
+   "from": "03-chef-celebrate.png",
+   "crop": [
+    82,
+    19,
+    931,
+    1483
+   ],
+   "size": [
+    348,
+    600
+   ],
+   "bytes": 55870,
+   "alpha": true
+  },
+  "chef-main.webp": {
+   "from": "02-chef-main.png",
+   "crop": [
+    57,
+    19,
+    966,
+    1516
+   ],
+   "size": [
+    364,
+    600
+   ],
+   "bytes": 43564,
+   "alpha": true
+  },
+  "chef-oops.webp": {
+   "from": "03-chef-oops.png",
+   "crop": [
+    171,
+    15,
+    794,
+    1519
+   ],
+   "size": [
+    249,
+    600
+   ],
+   "bytes": 41244,
+   "alpha": true
+  },
+  "chef-present.webp": {
+   "from": "03-chef-present.png",
+   "crop": [
+    222,
+    14,
+    779,
+    1519
+   ],
+   "size": [
+    222,
+    600
+   ],
+   "bytes": 40590,
+   "alpha": true
+  },
+  "chef-thinking.webp": {
+   "from": "03-chef-thinking.png",
+   "crop": [
+    184,
+    0,
+    789,
+    1517
+   ],
+   "size": [
+    239,
+    600
+   ],
+   "bytes": 43512,
+   "alpha": true
+  },
+  "chef-wave.webp": {
+   "from": "03-chef-wave.png",
+   "crop": [
+    168,
+    17,
+    777,
+    1518
+   ],
+   "size": [
+    243,
+    600
+   ],
+   "bytes": 42542,
+   "alpha": true
+  },
+  "coin.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    841,
+    666,
+    1010,
+    835
+   ],
+   "size": [
+    169,
+    169
+   ],
+   "bytes": 8282,
+   "alpha": true
+  },
+  "lobby-bg.webp": {
+   "from": "04-lobby-bg.png",
+   "size": [
+    1024,
+    1536
+   ],
+   "quality": 82,
+   "bytes": 146164,
+   "alpha": false
+  },
+  "map-1.webp": {
+   "from": "06-map-1.png",
+   "size": [
+    1024,
+    1536
+   ],
+   "quality": 78,
+   "bytes": 134752,
+   "alpha": false
+  },
+  "map-2.webp": {
+   "from": "06-map-2.png",
+   "size": [
+    1024,
+    1536
+   ],
+   "quality": 78,
+   "bytes": 132200,
+   "alpha": false
+  },
+  "map-3.webp": {
+   "from": "06-map-3.png",
+   "size": [
+    1024,
+    1536
+   ],
+   "quality": 78,
+   "bytes": 138424,
+   "alpha": false
+  },
+  "panel.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    11,
+    556,
+    467,
+    835
+   ],
+   "size": [
+    456,
+    279
+   ],
+   "bytes": 18728,
+   "alpha": true
+  },
+  "pill-mint.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    21,
+    384,
+    432,
+    535
+   ],
+   "size": [
+    411,
+    151
+   ],
+   "bytes": 14294,
+   "alpha": true
+  },
+  "play-bg.webp": {
+   "from": "05-play-bg.png",
+   "size": [
+    1024,
+    1536
+   ],
+   "quality": 82,
+   "bytes": 28358,
+   "alpha": false
+  },
+  "ribbon.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    449,
+    379,
+    1000,
+    530
+   ],
+   "size": [
+    551,
+    151
+   ],
+   "bytes": 17880,
+   "alpha": true
+  },
+  "splash.webp": {
+   "from": "11-splash.png",
+   "size": [
+    1024,
+    1536
+   ],
+   "quality": 82,
+   "bytes": 142950,
+   "alpha": false
+  },
+  "star.webp": {
+   "from": "08-ui-kit.png",
+   "crop": [
+    484,
+    711,
+    597,
+    820
+   ],
+   "size": [
+    113,
+    109
+   ],
+   "bytes": 3660,
+   "alpha": true
+  },
+  "win-bg.webp": {
+   "from": "07-win-bg.png",
+   "size": [
+    1024,
+    1536
+   ],
+   "quality": 82,
+   "bytes": 65158,
+   "alpha": false
+  }
+ }
+}
