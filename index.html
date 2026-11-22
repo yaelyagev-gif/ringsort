@@ -1,4 +1,10 @@
-<meta name="theme-color" content="#F6D9D2">
+<!doctype html>
+<html lang="en">
+<head>
+  <script>document.documentElement.dataset.build="ac67135-r14"</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#F6D9D2">
   <title>Ring Sort · Storybook Bakery</title>
   <link rel="stylesheet" href="game.css">
   <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
@@ -8,10 +14,8 @@
   <link rel="preload" href="art/bakery/lobby-bg.webp" as="image">
   <link rel="preload" href="art/bakery/play-bg.webp" as="image">
   <script type="module" src="game.mjs"></script>
-<style>:root{padding:0!important}html,body{height:100%;margin:0}</style>
-<script>document.documentElement.dataset.build="ac67135-r14";document.addEventListener("DOMContentLoaded",()=>document.body.classList.add("mobile-game"));</script>
-<script>document.body&&document.body.classList.add("mobile-game")</script>
-
+</head>
+<body class="mobile-game">
   <div id="splash" class="splash" role="status" aria-label="Loading Ring Sort">
     <p class="splash-text">Warming up the bakery<span class="dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p>
   </div>
@@ -137,3 +141,5 @@
   <div class="rotate" role="alert">
     <div class="rotate-card"><span id="rotate-icon" class="rotate-icon"></span><p>Turn your phone upright to keep sorting.</p></div>
   </div>
+</body>
+</html>
