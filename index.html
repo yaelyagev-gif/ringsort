@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <script>document.documentElement.dataset.build="ac67135-r14"</script>
+  <script>document.documentElement.dataset.build="ac67135-r16"</script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#F6D9D2">
@@ -36,7 +36,7 @@
     <header class="hud">
       <div class="hud-pills">
         <div id="moves-chip" class="moves-pill" role="status"><strong id="moves" class="pill-num">0</strong><span>moves</span></div>
-        <div id="coins-chip" class="coins-pill" role="img" aria-label="Coins, coming soon"><img src="art/bakery/coin.webp" alt="" width="26" height="26"><span id="coins" class="pill-num">0</span></div>
+        <div id="coins-chip" class="coins-pill" role="img" aria-label="Coins"><img src="art/bakery/coin.webp" alt="" width="26" height="26"><span id="coins" class="pill-num">0</span></div>
       </div>
       <div class="level-ribbon"><p id="level-label">LEVEL 1</p><h1 id="level-title">Bakery</h1></div>
       <button id="home" class="round-btn home-btn hud-gear" type="button" aria-label="Home, back to the lobby"></button>
@@ -57,7 +57,7 @@
     <section id="lobby" class="lobby" aria-label="Home" hidden>
       <img class="lobby-bg" src="art/bakery/lobby-bg.webp" alt="" decoding="async">
       <div class="lobby-top">
-        <div class="coins-pill" role="img" aria-label="Coins, coming soon"><img src="art/bakery/coin.webp" alt="" width="26" height="26"><span id="lobby-coins" class="pill-num">0</span></div>
+        <div class="coins-pill" role="img" aria-label="Coins"><img src="art/bakery/coin.webp" alt="" width="26" height="26"><span id="lobby-coins" class="pill-num">0</span></div>
         <button id="lobby-settings" class="round-btn" type="button" aria-label="Settings"><img src="art/bakery/btn-gear.webp" alt="" width="48" height="48"></button>
       </div>
       <div class="level-ribbon lobby-ribbon"><p id="lobby-level">LEVEL 1</p></div>
@@ -79,7 +79,7 @@
       <div class="win-panel">
         <div id="win-stars" class="win-stars" role="img"></div>
         <p id="win-moves" class="win-moves"></p>
-        <p class="win-coins" aria-label="Coins, coming soon"><img src="art/bakery/coin.webp" alt="" width="28" height="28"><span id="win-coins">+0</span></p>
+        <p class="win-coins" id="win-coins-row"><img src="art/bakery/coin.webp" alt="" width="28" height="28"><span id="win-coins">+0</span></p>
         <p id="win-kept" class="win-kept" hidden></p>
       </div>
       <button id="win-next" class="pill-btn" type="button"><span id="win-next-label">Next</span></button>
@@ -88,6 +88,45 @@
         <button id="win-levels" class="soft-btn" type="button"><img src="art/bakery/btn-play-round.webp" alt="" width="34" height="34"><span>Levels</span></button>
         <button id="win-home" class="soft-btn home-soft" type="button" aria-label="Home, back to the lobby"><span class="home-face"></span><span>Home</span></button>
       </div>
+    </div>
+  </dialog>
+
+  <dialog id="chest-dialog" class="panel win-screen econ-screen" aria-labelledby="chest-title">
+    <div class="card">
+      <div class="win-ribbon"><h2 id="chest-title">Chapter 1 chest!</h2></div>
+      <img class="win-chef" src="art/bakery/chef-celebrate.webp" alt="" width="174" height="300" decoding="async">
+      <div class="win-panel econ-panel">
+        <p class="econ-note">All ten levels sorted. Here is your treat:</p>
+        <p class="win-coins"><img src="art/bakery/coin.webp" alt="" width="28" height="28"><span id="chest-coins">+50</span><span class="econ-unit">coins</span></p>
+        <p class="win-coins hint-line"><img src="art/bakery/btn-hint.webp" alt="" width="28" height="28"><span id="chest-hints">+1</span><span class="econ-unit">Hint</span></p>
+      </div>
+      <button id="chest-ok" class="pill-btn" type="button"><span>Collect</span></button>
+    </div>
+  </dialog>
+
+  <dialog id="gift-dialog" class="panel win-screen econ-screen" aria-labelledby="gift-title">
+    <div class="card">
+      <div class="win-ribbon"><h2 id="gift-title">Daily gift</h2></div>
+      <img class="win-chef" src="art/bakery/chef-present.webp" alt="" width="174" height="300" decoding="async">
+      <div class="win-panel econ-panel">
+        <p class="econ-note" id="gift-day">Day 1 of 7</p>
+        <p class="win-coins"><img src="art/bakery/coin.webp" alt="" width="28" height="28"><span id="gift-coins">+25</span><span class="econ-unit">coins</span></p>
+        <div id="gift-days" class="gift-days" aria-hidden="true"></div>
+      </div>
+      <button id="gift-ok" class="pill-btn" type="button"><span>Collect</span></button>
+    </div>
+  </dialog>
+
+  <dialog id="welcome-dialog" class="panel win-screen econ-screen" aria-labelledby="welcome-title">
+    <div class="card">
+      <div class="win-ribbon"><h2 id="welcome-title">Welcome back!</h2></div>
+      <img class="win-chef" src="art/bakery/chef-present.webp" alt="" width="174" height="300" decoding="async">
+      <div class="win-panel econ-panel">
+        <ul id="welcome-lines" class="welcome-lines"></ul>
+        <p class="win-coins"><img src="art/bakery/coin.webp" alt="" width="28" height="28"><span id="welcome-total">+390</span></p>
+        <p id="welcome-hints" class="econ-note" hidden></p>
+      </div>
+      <button id="welcome-ok" class="pill-btn" type="button"><span>Thanks!</span></button>
     </div>
   </dialog>
 

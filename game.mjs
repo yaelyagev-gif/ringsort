@@ -3,6 +3,7 @@
 import { capacity, cloneBoard, hasMove, move, solve, solved, validateBoard } from "./rules.mjs";
 import { installSprite, drawPeg, ringSprite, ringColors, colorNames, icon, starIcon, RING, ringCentreY, setRingVariant, svgEl } from "./game-art.mjs";
 import { computeLayout } from "./game-layout.mjs";
+import * as eco from "./economy.mjs";
 import { play, settled, wait, settleAll, setSound, unlockAudio, sound, setHaptics, haptic, canVibrate, starBurst, confetti } from "./game-fx.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -39,9 +40,13 @@ const firstLesson = [
 
 // ---------------------------------------------------------------- save ----
 const defaultSettings = () => ({ sound: true, haptics: true, reduced: false, patterns: false, contrast: false });
-const emptySave = () => ({ v: 2, settings: defaultSettings(), completed: [], rewards: {}, active: null, contentVersion: null });
+const emptySave = () => ({ v: 3, settings: defaultSettings(), completed: [], rewards: {}, active: null, contentVersion: null });
 let storageOk = true;
 let save = loadSave();
+// Retro grant + wallet migration run FIRST, on the save exactly as stored: it reads the stars in save.rewards
+// before boot() prunes or alters anything for a re-tuned catalog (see economy.mjs).
+eco.migrateWallet(save, eco.parseMarker(readKey(eco.MARKER_KEY)));
+save.v = 3;
 
 function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -57,7 +62,7 @@ function loadSave() {
   const base = emptySave();
   try {
     const raw = JSON.parse(readKey(SAVE_KEY));
-    if (raw && raw.v === 2) {
+    if (raw && (raw.v === 2 || raw.v === 3)) {
       return {
         ...base, ...raw,
         settings: { ...base.settings, ...(raw.settings || {}) },
@@ -81,6 +86,7 @@ function loadSave() {
 function persist() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    localStorage.setItem(eco.MARKER_KEY, JSON.stringify(eco.paidMarker(save)));   // survives wallet repair
     return true;
   } catch {
     if (storageOk) toast("Progress can’t be saved in this browser, but you can keep playing.");
@@ -161,11 +167,17 @@ function commitMove(from, to) {
     if (a.par == null) a.par = parOf(a.initial) ?? a.history.length;
     const moves = a.history.length;
     const stars = starsFor(moves, a.par);
+    const wasCleared = save.completed.includes(a.id) || !!save.rewards[a.id];
+    // an older save can have the id in `completed` with no rewards entry: that is a replay (1-star floor), never a second first clear
+    if (wasCleared && !save.rewards[a.id]) save.rewards[a.id] = { attemptId: "legacy", stars: eco.storedStars(save, a.id), contentVersion: a.version, at: new Date().toISOString() };
     const existing = save.rewards[a.id];
+    const prevBest = existing ? (Number.isInteger(existing.best) ? existing.best : existing.stars) : null;
+    const paid = eco.payWin(save, { attemptId: a.attemptId, stars, prevBest });   // ledger attempt:<id>: pays once
     if (!save.completed.includes(a.id)) save.completed.push(a.id);
     if (!existing) save.rewards[a.id] = { attemptId: a.attemptId, stars, contentVersion: a.version, at: new Date().toISOString() };
     const record = save.rewards[a.id];
-    a.result = { stars, moves, par: a.par, firstClear: record.attemptId === a.attemptId, keptStars: record.stars };
+    record.best = Math.max(record.best ?? 0, record.stars ?? 0, stars);
+    a.result = { stars, moves, par: a.par, firstClear: record.attemptId === a.attemptId, keptStars: record.stars, coins: paid.coins };
   }
   persist();
   return { next, count, won };
@@ -267,7 +279,7 @@ function render() {
   $("level-title").textContent = a.name;
   $("moves").textContent = a.history.length;
   $("moves-chip").setAttribute("aria-label", a.history.length + " moves");
-  $("coins").textContent = coinsShown();
+  refreshCoins();
 
   // pegs (visuals) and their hit boxes
   const pegsLayer = $("pegs");
@@ -773,11 +785,11 @@ function closeAllDialogs() {
   document.querySelectorAll("dialog[open]").forEach((d) => d.close());
 }
 
-// Coins are visual only for now (no economy yet): 10 per star, shown on the win screen and,
-// as a running total of earned stars, in the HUD. Nothing is saved for them.
-const COINS_PER_STAR = 10;
-function coinsShown() {
-  return Object.values(save.rewards).reduce((sum, r) => sum + (r.stars || 0), 0) * COINS_PER_STAR;
+// Coins live in save.wallet (economy.mjs). HUD and lobby show the wallet balance.
+const coinsShown = () => save.wallet.coins.toLocaleString("en-US");
+function refreshCoins() {
+  $("coins").textContent = $("lobby-coins").textContent = coinsShown();
+  for (const chip of [$("coins-chip"), $("lobby-coins").parentElement]) chip.setAttribute("aria-label", `${coinsShown()} coins`);
 }
 function openWin(preview = null) {
   const a = active();
@@ -786,7 +798,8 @@ function openWin(preview = null) {
   const nextLevel = level(a.id + 1);
   $("win-title").textContent = nextLevel ? "Nicely sorted!" : "Bakery complete!";
   $("win-moves").textContent = `Sorted in ${res.moves} move${res.moves === 1 ? "" : "s"}` + (res.par ? ` · best ${res.par}` : "");
-  $("win-coins").textContent = "+" + res.stars * COINS_PER_STAR;
+  $("win-coins").textContent = "+" + (res.coins ?? 0);
+  $("win-coins-row").setAttribute("aria-label", `${res.coins ?? 0} coins earned`);
   const stars = $("win-stars");
   stars.replaceChildren(...[1, 2, 3].map((n) => {
     const s = document.createElement("img");
@@ -802,7 +815,7 @@ function openWin(preview = null) {
   if (!kept.hidden) kept.textContent = `Your first clear earned ${res.keptStars} star${res.keptStars === 1 ? "" : "s"}. Best kept from first clear.`;
   $("win-next-label").textContent = nextLevel ? "Next" : "Replay";
   $("win-next").setAttribute("aria-label", nextLevel ? `Next level, ${nextLevel.id}` : "Replay this level");
-  $("win-next").onclick = () => start(nextLevel ?? level(a.id));
+  $("win-next").onclick = () => afterWin(() => start(nextLevel ?? level(a.id)));
   $("win-replay").hidden = !nextLevel;
   if (openDialog(d, "panel")) {
     $("win-next").focus({ preventScroll: true });
@@ -815,6 +828,73 @@ function openWin(preview = null) {
     }
   }
 }
+
+// ------------------------------------------------- chest, daily gift, welcome back ----
+// Chests and the gift are paid when their screen opens (ledger keys make a second call pay nothing),
+// so closing the app on the screen never loses or repeats a reward.
+function waitScreen(d, button) {
+  return new Promise((resolve) => {
+    if (!openDialog(d, "panel")) return resolve();
+    button.focus({ preventScroll: true });
+    button.onclick = async () => { button.onclick = null; await closeDialog(d); resolve(); };
+  });
+}
+function showChest({ chapter, coins, hints }) {
+  $("chest-title").textContent = `Chapter ${chapter} chest!`;
+  $("chest-coins").textContent = "+" + coins;
+  $("chest-hints").textContent = "+" + hints;
+  sound("win");
+  return waitScreen($("chest-dialog"), $("chest-ok"));
+}
+async function claimChests() {
+  for (const n of eco.pendingChests(save)) {
+    const chest = eco.claimChest(save, n);
+    if (!chest) continue;
+    persist();
+    refreshCoins();
+    await showChest(chest);
+  }
+}
+let winBusy = false;
+async function afterWin(action) {
+  if (winBusy) return;
+  winBusy = true;
+  try { await claimChests(); } finally { winBusy = false; }
+  action();
+}
+function buildGiftDays() {
+  $("gift-days").replaceChildren(...eco.DAILY_COINS.map((_, i) => { const e = document.createElement("i"); e.textContent = i + 1; return e; }));
+}
+function showGift({ day, coins }) {
+  $("gift-day").textContent = `Day ${day} of 7${day === 7 ? " · big day!" : ""}`;
+  $("gift-coins").textContent = "+" + coins;
+  [...$("gift-days").children].forEach((e, i) => { e.className = i + 1 < day ? "done" : i + 1 === day ? "today" : ""; });
+  return waitScreen($("gift-dialog"), $("gift-ok"));
+}
+function showWelcome(w) {
+  const lines = [];
+  lines.push(`<b>${w.levelCoins} coins</b> for ${w.levels} cleared level${w.levels === 1 ? "" : "s"}`);
+  for (const c of w.chests) lines.push(`<b>${c.coins} coins</b> and 1 Hint for the chapter ${c.chapter} chest`);
+  if (w.start) lines.push(`<b>${w.start} coins</b> to start`);
+  $("welcome-lines").replaceChildren(...lines.map((html) => { const li = document.createElement("li"); li.innerHTML = html; return li; }));
+  $("welcome-total").textContent = "+" + w.total;
+  const h = $("welcome-hints");
+  h.hidden = !w.hints;
+  h.textContent = `+ ${w.hints} Hint${w.hints === 1 ? "" : "s"}`;
+  return waitScreen($("welcome-dialog"), $("welcome-ok"));
+}
+// On launch: Welcome back (retro grant, once), then the daily gift, then any chest not yet opened.
+async function launchFlow() {
+  if (save.wallet.welcome) {
+    await showWelcome(save.wallet.welcome);
+    eco.dismissWelcome(save);
+    persist();
+  }
+  const gift = eco.claimDaily(save);
+  if (gift) { persist(); refreshCoins(); await showGift(gift); }
+  if (!$("win-dialog").open) await claimChests();
+}
+
 function openStuck() {
   const a = active();
   $("stuck-undo").hidden = !a.history.length;
@@ -1054,7 +1134,7 @@ function playTarget() {
 function showLobby() {
   const target = playTarget();
   $("lobby-level").textContent = `LEVEL ${target?.id ?? 1}`;
-  $("lobby-coins").textContent = coinsShown();
+  refreshCoins();
   $("lobby").hidden = false;
   $("lobby-play").focus({ preventScroll: true });
 }
@@ -1167,7 +1247,7 @@ function wire() {
   // Hint and +Peg are art only for now (no logic yet): they say so instead of acting
   $("hint").addEventListener("click", () => toast("Hints are coming soon."));
   $("add-peg").addEventListener("click", () => toast("Extra pegs are coming soon."));
-  $("win-replay").addEventListener("click", () => start(level(active().id)));
+  $("win-replay").addEventListener("click", () => afterWin(() => start(level(active().id))));
   $("home").addEventListener("click", async () => {
     settle();
     const a = active();
@@ -1177,19 +1257,20 @@ function wire() {
     }
     goHome();
   });
-  $("win-home").addEventListener("click", goHome);
+  $("win-home").addEventListener("click", () => afterWin(goHome));
   $("stuck-home").addEventListener("click", goHome);
   $("settings-close").addEventListener("click", () => closeDialog($("settings-dialog")));
   $("settings-done").addEventListener("click", () => closeDialog($("settings-dialog")));
   $("map-close").addEventListener("click", () => closeDialog($("map-dialog")));
-  $("win-levels").addEventListener("click", () => { closeDialog($("win-dialog"), true); openMap(); });
+  $("win-levels").addEventListener("click", () => afterWin(() => { closeDialog($("win-dialog"), true); openMap(); }));
   $("stuck-undo").addEventListener("click", () => { closeDialog($("stuck-dialog"), true); undo(); });
   $("stuck-restart").addEventListener("click", () => { closeDialog($("stuck-dialog"), true); start(level(active().id)); });
   $("confirm-ok").addEventListener("click", () => answerConfirm(true));
   $("confirm-cancel").addEventListener("click", () => answerConfirm(false));
   $("confirm-dialog").addEventListener("cancel", () => { confirmResolve?.(false); confirmResolve = null; });
-  $("win-dialog").addEventListener("cancel", (e) => e.preventDefault());
+  for (const id of ["win-dialog", "chest-dialog", "gift-dialog", "welcome-dialog"]) $(id).addEventListener("cancel", (e) => e.preventDefault());
   $("stuck-dialog").addEventListener("cancel", (e) => e.preventDefault());
+  buildGiftDays();
   $("note-restart").addEventListener("click", () => { versionNote = null; start(level(active().id)); });
   $("note-close").addEventListener("click", () => { versionNote = null; updateNote(); });
   for (const d of document.querySelectorAll("dialog")) {
@@ -1297,9 +1378,16 @@ async function boot() {
   document.documentElement.classList.add("ready");
   if (toLobby) showLobby();
   if (screen === "map") { openMap(params.get("at") || "current"); }
-  if (preview === "win") { settle(); openWin({ stars: Number(params.get("stars")) || 3, moves: 14, par: 12, firstClear: true }); }
+  if (preview === "win") { settle(); const st = Number(params.get("stars")) || 3; openWin({ stars: st, moves: 14, par: 12, firstClear: true, coins: eco.firstClearCoins(st) }); }
   else if (preview === "stuck") { settle(); openStuck(); }
   hideSplash();
+  refreshCoins();
+  persist();
+  if (!forceStill && !pick && !preview && !screen && params.get("flow") !== "off") launchFlow();
+  // review hooks: ?preview=chest&n=1 | gift&day=3 | welcome show the screen with sample numbers, nothing is paid
+  if (preview === "chest") showChest({ chapter: Number(params.get("n")) || 1, coins: eco.chestCoins(Number(params.get("n")) || 1), hints: 1 });
+  else if (preview === "gift") { const day = Math.min(7, Math.max(1, Number(params.get("day")) || 3)); showGift({ day, coins: eco.DAILY_COINS[day - 1] }); }
+  else if (preview === "welcome") showWelcome({ levels: 14, levelCoins: 240, chests: [{ chapter: 1, coins: 50 }], hints: 1, start: 100, total: 390 });
   // screenshots wait for `html.shot-ready`: fades are over and the painted art is decoded
   if (forceStill) Promise.all([...document.images].map((im) => im.decode?.().catch(() => {}))).then(() => setTimeout(() => document.documentElement.classList.add("shot-ready"), 400));
   if (!storageOk) toast("Progress can’t be saved in this browser, but you can keep playing.");

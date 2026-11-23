@@ -109,6 +109,7 @@ img { -webkit-user-drag: none; }
 /* both numbers sit in the same right-aligned column so the digits line up */
 .pill-num { display: inline-block; width: 32px; text-align: right; font-size: 17px; line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }
 .moves-pill span:not(.pill-num) { font-size: 11px; line-height: 1; font-weight: 800; color: var(--ink-soft); letter-spacing: .04em; text-transform: uppercase; }
+.coins-pill .pill-num { width: auto; min-width: 32px; flex: 1; padding-right: 14px; white-space: nowrap; }
 .coins-pill img { position: absolute; left: -10px; top: 50%; width: 26px; height: 26px; transform: translateY(-50%); }
 /* ribbon.webp is 551 x 151: live LEVEL text sits on the banner's centre band */
 .level-ribbon {
@@ -435,3 +436,17 @@ h2 { margin: 0; }
 }
 html:not(.ready) .scene, html:not(.ready) .board { opacity: 0; }
 .scene, .board { transition: opacity 200ms ease; }
+
+/* ------------------------------------------------- economy screens (chest, daily gift, welcome back) */
+.econ-panel { gap: 3px; }
+.econ-panel .win-coins { font-size: 22px; }
+.econ-unit { font-size: 14px; font-weight: 800; color: var(--ink-soft); }
+.econ-note { font-size: 13.5px; line-height: 1.25; font-weight: 800; color: var(--ink-soft); text-align: center; }
+.hint-line { color: #2E7D5B; }
+.gift-days { display: flex; gap: 5px; margin-top: 2px; }
+.gift-days i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--cream-edge); background: #FFF7EA; font-weight: 900; font-size: 11px; line-height: 18px; font-style: normal; text-align: center; color: var(--ink-soft); }
+.gift-days i.done { background: #B7E3C9; border-color: #6CBF93; }
+.gift-days i.today { background: #FFD36A; border-color: #D9A23A; color: #7A4416; transform: scale(1.18); }
+.welcome-lines { list-style: none; margin: 0 0 2px; padding: 0; display: grid; gap: 1px; font-size: 12.5px; line-height: 1.25; font-weight: 800; color: var(--ink-soft); text-align: center; }
+.welcome-lines b { color: #B7792A; }
+.econ-screen .pill-btn { margin-top: 14px; }
