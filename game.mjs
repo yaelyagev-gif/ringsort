@@ -6,6 +6,8 @@ import { computeLayout } from "./game-layout.mjs";
 import * as eco from "./economy.mjs";
 import * as stuckLib from "./game-stuck.mjs";
 import { starsFor, parOf } from "./stars.mjs";
+import { createSync } from "./sync.mjs";
+import { createCloudUi } from "./cloud-ui.mjs";
 import { play, settled, wait, settleAll, setSound, unlockAudio, sound, setHaptics, haptic, canVibrate, starBurst, confetti } from "./game-fx.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -89,6 +91,7 @@ function persist() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(save));
     localStorage.setItem(eco.MARKER_KEY, JSON.stringify(eco.paidMarker(save)));   // survives wallet repair
+    try { sync.onPersist(save); } catch { /* cloud save never breaks the game */ }
     return true;
   } catch {
     if (storageOk) toast("Progress can’t be saved in this browser, but you can keep playing.");
@@ -96,6 +99,50 @@ function persist() {
     return false;
   }
 }
+
+// ------------------------------------------------------- cloud save ----
+// public/sync.mjs does the work (docs/team/22). It never blocks play: it starts after the first screen is idle,
+// sends only at quiet moments (level select or the win card), and applies pulled data only on the level select.
+const apiBase = document.querySelector('meta[name="ringsort-api-base"]')?.content ?? "";
+const levelSelectOpen = () => !$("lobby").hidden && !celebrating && !busy;
+const sync = createSync({
+  fetch: (...args) => fetch(...args),
+  storage: (() => { try { return localStorage; } catch { return null; } })(),
+  now: () => Date.now(),
+  setTimer: (fn, ms) => { const id = setTimeout(fn, ms); return () => clearTimeout(id); },
+  apiBase,
+  random: uuid,
+  platform: apiBase ? "android" : "web"
+}, {
+  getSave: () => save,
+  persist,
+  canSend: () => !celebrating && !busy && (!$("lobby").hidden || $("win-dialog").open),
+  canApply: levelSelectOpen,
+  hasLevel: (id) => catalog.some((l) => l.id === id),
+  toast: (text) => toast(text),
+  onStatus: () => renderCloudStatus(),
+  onApplied: () => { refreshCoins(); const t = playTarget(); if (t) $("lobby-level").textContent = `LEVEL ${t.id}`; if ($("map-dialog").open) renderMap(); renderCloudStatus(); }
+});
+function renderCloudStatus() {
+  const el = $("cloud-status");
+  if (!el) return;
+  const { text } = sync.status();
+  el.hidden = !text;
+  el.textContent = text ?? "";
+  const open = $("cloud-open");
+  if (open) open.hidden = !sync.available();
+  const legal = $("legal-links");
+  if (legal) legal.hidden = !sync.available();   // privacy and delete-my-data links appear with cloud save only
+}
+// Settings > Cloud save: recovery code, restore, delete my cloud data. Reachable only from Settings.
+const cloudUi = createCloudUi({
+  $, sync, openDialog, closeDialog,
+  copy: (text) => navigator.clipboard.writeText(text),
+  clearLocal: () => {   // "Also remove progress from this device": drop the save and start over
+    try { for (const k of [SAVE_KEY, LEGACY_KEY, eco.MARKER_KEY]) localStorage.removeItem(k); } catch { /* ignore */ }
+    location.reload();
+  }
+});
 
 // ----------------------------------------------------------- game state ----
 let catalog = [];
@@ -186,6 +233,7 @@ function commitMove(from, to) {
     eco.clearStuck(save, a.id);
     const record = save.rewards[a.id];
     record.best = Math.max(record.best ?? 0, record.stars ?? 0, stars);
+    record.bestMoves = Math.min(Number.isInteger(record.bestMoves) ? record.bestMoves : moves, moves);   // synced as best_moves
     a.result = { stars, moves, par: a.par, firstClear: record.attemptId === a.attemptId, keptStars: record.stars, coins: paid.coins };
   }
   persist();
@@ -1428,6 +1476,7 @@ function showLobby() {
   refreshCoins();
   $("lobby").hidden = false;
   $("lobby-play").focus({ preventScroll: true });
+  try { sync.idle(); } catch { /* ignore */ }
 }
 // Back to the lobby from the play screen. Progress is already saved after every move, so PLAY resumes it.
 function goHome() {
@@ -1536,7 +1585,7 @@ function wire() {
   $("map-open").addEventListener("click", () => { closeDialog($("settings-dialog"), true); openMap(); });
   $("lobby-play").addEventListener("click", () => { unlockAudio(); playFromLobby(); });
   $("lobby-levels").addEventListener("click", () => openMap());
-  $("lobby-settings").addEventListener("click", () => { renderSettings(); openDialog($("settings-dialog")); });
+  $("lobby-settings").addEventListener("click", () => { renderSettings(); renderCloudStatus(); openDialog($("settings-dialog")); });
   $("win-replay").addEventListener("click", () => afterWin(() => start(level(active().id))));
   $("home").addEventListener("click", async () => {
     settle();
@@ -1550,6 +1599,7 @@ function wire() {
   $("win-home").addEventListener("click", () => afterWin(goHome));
   $("stuck-home").addEventListener("click", goHome);
   $("settings-close").addEventListener("click", () => closeDialog($("settings-dialog")));
+  $("cloud-open").addEventListener("click", () => { if (levelSelectOpen()) cloudUi.open(); });
   $("settings-done").addEventListener("click", () => closeDialog($("settings-dialog")));
   $("map-close").addEventListener("click", () => closeDialog($("map-dialog")));
   $("win-levels").addEventListener("click", () => afterWin(() => { closeDialog($("win-dialog"), true); openMap(); }));
@@ -1573,11 +1623,13 @@ function wire() {
   }
   // interruption safety: finish all motion at once; the state is already saved
   const flush = () => { settle(); confettiClear(); };
+  // cloud save: the page leaving the screen sends one keepalive batch (sync.mjs); coming back waits for an idle screen
+  const leaving = () => { try { sync.flushHidden(); } catch { /* ignore */ } };
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") flush();
-    else refreshVersion();
+    if (document.visibilityState === "hidden") { flush(); leaving(); }
+    else { refreshVersion(); try { sync.onVisible(); } catch { /* ignore */ } }
   });
-  window.addEventListener("pagehide", flush);
+  window.addEventListener("pagehide", () => { flush(); leaving(); });
   window.addEventListener("pointerdown", unlockAudio, { once: true });
   let resizeRaf = 0;
   const onResize = () => {
@@ -1701,6 +1753,8 @@ async function boot() {
   hideSplash();
   refreshCoins();
   persist();
+  // cloud save starts after first paint and the first screen are done; level 1 and the tutorial never wait for it
+  setTimeout(() => { try { sync.start(); } catch { /* ignore */ } }, 1500);
   if (!forceStill && !pick && !preview && !screen && params.get("flow") !== "off") launchFlow();
   // review hooks: ?preview=chest&n=1 | gift&day=3 | welcome show the screen with sample numbers, nothing is paid
   if (preview === "chest") showChest({ chapter: Number(params.get("n")) || 1, coins: eco.chestCoins(Number(params.get("n")) || 1), hints: 1 });

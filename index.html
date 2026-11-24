@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <script>document.documentElement.dataset.build="ac67135-r22"</script>
+  <script>document.documentElement.dataset.build="ac67135-r24"</script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#F6D9D2">
@@ -180,10 +180,21 @@
     <div class="card">
       <div class="sheet-head"><h2 id="settings-title">Settings</h2><button id="settings-close" class="close-btn" type="button" aria-label="Close settings"></button></div>
       <div id="settings-list" class="settings-list"></div>
+      <p id="cloud-status" class="cloud-status" role="status" hidden></p>
+      <button id="cloud-open" class="wide-btn honey cloud-open" type="button" hidden>Cloud save</button>
+      <p id="legal-links" class="legal-links" hidden><a href="privacy.html" target="_blank" rel="noopener">Privacy</a> · <a href="delete-account.html" target="_blank" rel="noopener">Delete my data</a></p>
       <div class="sheet-actions">
         <button id="map-open" class="wide-btn honey" type="button">Levels</button>
         <button id="settings-done" class="wide-btn go" type="button">Done</button>
       </div>
+    </div>
+  </dialog>
+
+  <dialog id="cloud-dialog" class="sheet confirm-sheet cloud-sheet" aria-labelledby="cloud-title">
+    <div class="card">
+      <h2 id="cloud-title">Cloud save</h2>
+      <div id="cloud-body" class="cloud-body"></div>
+      <div id="cloud-actions" class="sheet-actions"></div>
     </div>
   </dialog>
 
