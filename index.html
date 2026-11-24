@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <script>document.documentElement.dataset.build="ac67135-r16"</script>
+  <script>document.documentElement.dataset.build="ac67135-r18"</script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#F6D9D2">
@@ -47,10 +47,10 @@
       <button id="note-close" type="button" class="note-close" aria-label="Dismiss"></button>
     </div>
     <footer class="bar">
-      <button id="undo" class="bar-btn" type="button" disabled><img class="round-face" src="art/bakery/btn-undo.webp" alt="" width="56" height="56"><span class="cap-text">Undo</span></button>
+      <button id="undo" class="bar-btn" type="button" disabled><img class="round-face" src="art/bakery/btn-undo.webp" alt="" width="56" height="56"><span class="cap-text" id="undo-cap">Undo</span></button>
       <button id="restart" class="bar-btn" type="button"><img class="round-face" src="art/bakery/btn-restart.webp" alt="" width="56" height="56"><span class="cap-text">Restart</span></button>
-      <button id="hint" class="bar-btn soon" type="button" aria-disabled="true" aria-label="Hint, coming soon"><img class="round-face" src="art/bakery/btn-hint.webp" alt="" width="56" height="56"><span class="cap-text">Hint</span><span class="soon-tag" aria-hidden="true">soon</span></button>
-      <button id="add-peg" class="bar-btn soon" type="button" aria-disabled="true" aria-label="Extra peg, coming soon"><img class="round-face" src="art/bakery/btn-plus.webp" alt="" width="56" height="56"><span class="cap-text">+Peg</span><span class="soon-tag" aria-hidden="true">soon</span></button>
+      <button id="hint" class="bar-btn" type="button" aria-label="Hint"><img class="round-face" src="art/bakery/btn-hint.webp" alt="" width="56" height="56"><span class="cap-text">Hint</span><span id="hint-badge" class="tool-badge" aria-hidden="true"></span></button>
+      <button id="add-peg" class="bar-btn" type="button" aria-label="Add a peg"><img class="round-face" src="art/bakery/btn-plus.webp" alt="" width="56" height="56"><span class="cap-text">+Peg</span><span id="peg-badge" class="tool-badge" aria-hidden="true"></span></button>
     </footer>
     <div id="fx-top" class="fx-top" aria-hidden="true"></div>
     <div id="toast" class="toast" role="status" hidden></div>
@@ -133,13 +133,34 @@
   <dialog id="stuck-dialog" class="sheet stuck-sheet" aria-labelledby="stuck-title">
     <div class="card">
       <img class="chef-pop" src="art/bakery/chef-oops.webp" alt="" width="62" height="150" decoding="async">
-      <h2 id="stuck-title">Oops, out of moves</h2>
-      <p>No donut can move right now. Step back a move, or start this level again.</p>
-      <div class="sheet-actions">
-        <button id="stuck-undo" class="wide-btn honey" type="button">Undo</button>
-        <button id="stuck-restart" class="wide-btn mint" type="button">Restart</button>
+      <button id="stuck-home" class="round-btn home-btn stuck-home" type="button" aria-label="Home, back to the lobby"></button>
+      <h2 id="stuck-title">Oops, stuck!</h2>
+      <p id="stuck-text">No sorting is possible from here.</p>
+      <p id="stuck-poor" class="pay-balance" hidden><img src="art/bakery/coin.webp" alt="" width="22" height="22"><span id="stuck-balance">0</span><button id="stuck-coins" class="text-btn" type="button">Get coins</button></p>
+      <div class="stuck-actions">
+        <button id="stuck-rewind" class="wide-btn honey" type="button"><span>Back to before the mistake</span><b id="stuck-rewind-price" class="price"></b></button>
+        <button id="stuck-peg" class="wide-btn honey" type="button" hidden><span>+Peg</span><b id="stuck-peg-price" class="price"></b></button>
+        <button id="stuck-restart" class="wide-btn mint" type="button"><span>Restart</span><b class="price">free</b></button>
       </div>
-      <button id="stuck-home" class="soft-btn home-soft stuck-home" type="button" aria-label="Home, back to the lobby"><span class="home-face"></span><span>Home</span></button>
+    </div>
+  </dialog>
+
+  <dialog id="pay-dialog" class="sheet confirm-sheet pay-sheet" aria-labelledby="pay-title">
+    <div class="card">
+      <img class="chef-pop" src="art/bakery/chef-oops.webp" alt="" width="62" height="150" decoding="async">
+      <h2 id="pay-title"></h2>
+      <p id="pay-text"></p>
+      <p id="pay-balance" class="pay-balance"><img src="art/bakery/coin.webp" alt="" width="22" height="22"><span id="pay-balance-num">0</span></p>
+      <div id="pay-actions" class="pay-actions"></div>
+    </div>
+  </dialog>
+
+  <dialog id="coins-dialog" class="sheet confirm-sheet" aria-labelledby="coins-title">
+    <div class="card">
+      <img class="chef-pop" src="art/bakery/chef-oops.webp" alt="" width="62" height="150" decoding="async">
+      <h2 id="coins-title">Get coins</h2>
+      <p>The coin shop opens soon. Until then, coins come from clearing levels, chapter chests and the daily gift.</p>
+      <div class="sheet-actions"><button id="coins-back" class="wide-btn honey" type="button">Back</button></div>
     </div>
   </dialog>
 

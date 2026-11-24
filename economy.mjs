@@ -208,3 +208,145 @@ export function migrateWallet(save, paidKeys = []) {
 export function dismissWelcome(save) {
   delete save.wallet.welcome;
 }
+
+// ================================================================ Task B: boosters, Undo rule, stuck, pity ====
+// All prices come from PRICES above. Every coin spend writes a ledger key, so a double tap or a replayed
+// action can never charge twice; a spend can never take the wallet below 0.
+export const RULES = {
+  UNDO_PAID_FROM: 10,       // levels 1-9: Undo is free and unlimited
+  FREE_REWIND_UNTIL: 14,    // Rewind is free on L1-14
+  HINT_GIFT_LEVEL: 12,      // one free Hint token
+  PEG_GIFT_LEVEL: 15,       // one free +Peg token
+  PITY_REWIND_AT: 3,        // 3rd stuck on a level: one free Rewind
+  PITY_PEG_AT: 5            // 5th stuck: one +Peg token (once per save)
+};
+
+// Per-attempt booster state, kept on save.active.eco; a Restart makes a new attempt, so everything resets.
+export const attemptEco = (a) => (a.eco ??= { undos: 0, credits: 0, seq: 0, peg: false, epoch: 0 });
+
+// Charges coins under a unique ledger key. "dup" = already charged, "poor" = balance too low; nothing changes then.
+export function spendCoins(save, key, price) {
+  const w = save.wallet;
+  if (key in w.ledger) return "dup";
+  if (!Number.isInteger(price) || price < 0 || w.coins < price) return "poor";
+  w.coins -= price;
+  w.ledger[key] = price;
+  return "ok";
+}
+export const canAfford = (save, price) => save.wallet.coins >= price;
+
+// ---- toolbar Undo ----
+// kind: free (L1-9, unlimited) | free3 (L10+, `left` of 3 per attempt) | credit (bought pack) | pay | blocked (stuck board)
+export function undoPlan(levelId, a, stuck) {
+  const e = attemptEco(a);
+  if (stuck) return { kind: "blocked" };
+  if (levelId < RULES.UNDO_PAID_FROM) return { kind: "free" };
+  const left = PRICES.UNDO_FREE_PER_ATTEMPT - e.undos;
+  if (left > 0) return { kind: "free3", left };
+  if (e.credits > 0) return { kind: "credit", credits: e.credits };
+  return { kind: "pay", price: PRICES.UNDO, pack: PRICES.UNDO_PACK_3 };
+}
+// Consumes one Undo. choice "one" | "pack" only matters for kind "pay". Returns { ok, spent } or { ok: false, reason }.
+export function takeUndo(save, levelId, a, stuck, choice = "one") {
+  const plan = undoPlan(levelId, a, stuck);
+  const e = attemptEco(a);
+  if (plan.kind === "blocked") return { ok: false, reason: "stuck" };
+  if (plan.kind === "free") return { ok: true, spent: 0 };
+  if (plan.kind === "free3") { e.undos++; return { ok: true, spent: 0 }; }
+  if (plan.kind === "credit") { e.credits--; return { ok: true, spent: 0 }; }
+  const pack = choice === "pack";
+  const price = pack ? PRICES.UNDO_PACK_3 : PRICES.UNDO;
+  const res = spendCoins(save, [pack ? "undopack" : "undo", a.attemptId, e.seq].join(":"), price);
+  if (res !== "ok") return { ok: false, reason: res };
+  e.seq++;
+  if (pack) e.credits += 2;   // 3 Undos bought, this one is used now
+  return { ok: true, spent: price };
+}
+
+// ---- Hint: token first, else coins; asking again for the same board in the same attempt is free ----
+const hintKey = (a) => ["hint", a.attemptId, JSON.stringify(a.board)].join(":");
+export function takeHint(save, a) {
+  const key = hintKey(a);
+  const w = save.wallet;
+  if (key in w.ledger) return { ok: true, spent: 0, token: false, repeat: true };
+  if (w.hints > 0) { spendHint(save); w.ledger[key] = 0; return { ok: true, spent: 0, token: true }; }
+  const res = spendCoins(save, key, PRICES.HINT);
+  return res === "ok" ? { ok: true, spent: PRICES.HINT, token: false } : { ok: false, reason: res };
+}
+// What the next Hint costs: free for a repeat of the same board or when a token is held, else PRICES.HINT.
+export function hintCost(save, a) {
+  const w = save.wallet;
+  if (hintKey(a) in w.ledger) return { price: 0, repeat: true };
+  return w.hints > 0 ? { price: 0, token: true } : { price: PRICES.HINT };
+}
+// Gives a Hint back when the solver could not answer after the charge (no charge for a failed hint).
+export function refundHint(save, a, r) {
+  delete save.wallet.ledger[hintKey(a)];
+  if (r.token) addHints(save, 1); else addCoins(save, r.spent);
+}
+
+// ---- +Peg: one per attempt, token first, else coins ----
+export function takePeg(save, a) {
+  const e = attemptEco(a);
+  const key = "peg:" + a.attemptId;
+  const w = save.wallet;
+  if (e.peg || key in w.ledger) return { ok: false, reason: "dup" };
+  if (w.pegs > 0) { spendPeg(save); w.ledger[key] = 0; e.peg = true; e.epoch++; return { ok: true, spent: 0, token: true }; }
+  const res = spendCoins(save, key, PRICES.PEG);
+  if (res !== "ok") return { ok: false, reason: res };
+  e.peg = true; e.epoch++;
+  return { ok: true, spent: PRICES.PEG, token: false };
+}
+export const pegCost = (save) => (save.wallet.pegs > 0 ? { token: true, price: 0 } : { token: false, price: PRICES.PEG });
+
+// ---- Rewind: flat price whatever the depth; free on L1-14 and once per level by pity ----
+export function rewindCost(save, levelId) {
+  if (levelId <= RULES.FREE_REWIND_UNTIL) return { price: 0, why: "early" };
+  if ((save.wallet.stuckCount[levelId] ?? 0) >= RULES.PITY_REWIND_AT && !save.wallet.pityUsed[levelId]) return { price: 0, why: "pity" };
+  return { price: PRICES.REWIND, why: null };
+}
+export function takeRewind(save, levelId, a) {
+  const e = attemptEco(a);
+  const key = ["rewind", a.attemptId, e.epoch].join(":");
+  if (key in save.wallet.ledger) return { ok: false, reason: "dup" };
+  const cost = rewindCost(save, levelId);
+  if (cost.price === 0) {
+    save.wallet.ledger[key] = 0;
+    if (cost.why === "pity") save.wallet.pityUsed[levelId] = true;
+  } else {
+    const res = spendCoins(save, key, cost.price);
+    if (res !== "ok") return { ok: false, reason: res };
+  }
+  e.epoch++;
+  return { ok: true, spent: cost.price, why: cost.why };
+}
+
+// ---- stuck counter and pity ----
+// Call when the stuck screen opens. One count per stuck event (key stuck:<attempt>:<epoch>), so a reload
+// that reopens the same screen never counts twice. 5th stuck on a level: +Peg token once per save (pity:peg:L<id>).
+export function recordStuck(save, levelId, a) {
+  const e = attemptEco(a);
+  const w = save.wallet;
+  const key = ["stuck", a.attemptId, e.epoch].join(":");
+  let pegGranted = false;
+  if (!(key in w.ledger)) {
+    w.ledger[key] = 1;
+    w.stuckCount[levelId] = (w.stuckCount[levelId] ?? 0) + 1;
+    const pityKey = "pity:peg:L" + levelId;
+    if (w.stuckCount[levelId] >= RULES.PITY_PEG_AT && !(pityKey in w.ledger)) {
+      w.ledger[pityKey] = addPegs(save, 1);
+      pegGranted = true;
+    }
+  }
+  return { count: w.stuckCount[levelId] ?? 0, pegGranted, freeRewind: rewindCost(save, levelId).why === "pity" };
+}
+// Counters reset when the level is cleared (pityUsed and the once-per-save peg key stay).
+export function clearStuck(save, levelId) { delete save.wallet.stuckCount[levelId]; }
+
+// ---- one-time tutorial tokens: a Hint at L12, a +Peg at L15 ----
+export function claimLevelGift(save, levelId) {
+  const w = save.wallet;
+  if (levelId === RULES.HINT_GIFT_LEVEL && !("gift:hint:L12" in w.ledger)) { w.ledger["gift:hint:L12"] = addHints(save, 1); return { hints: 1, pegs: 0 }; }
+  if (levelId === RULES.PEG_GIFT_LEVEL && !("gift:peg:L15" in w.ledger)) { w.ledger["gift:peg:L15"] = addPegs(save, 1); return { hints: 0, pegs: 1 }; }
+  return null;
+}

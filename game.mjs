@@ -4,6 +4,7 @@ import { capacity, cloneBoard, hasMove, move, solve, solved, validateBoard } fro
 import { installSprite, drawPeg, ringSprite, ringColors, colorNames, icon, starIcon, RING, ringCentreY, setRingVariant, svgEl } from "./game-art.mjs";
 import { computeLayout } from "./game-layout.mjs";
 import * as eco from "./economy.mjs";
+import * as stuckLib from "./game-stuck.mjs";
 import { play, settled, wait, settleAll, setSound, unlockAudio, sound, setHaptics, haptic, canVibrate, starBurst, confetti } from "./game-fx.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -22,7 +23,7 @@ const hints = {
   9: "Look for a peg that needs only one more move.",
   10: "Plan two moves ahead before you tap.",
   11: "Dig out buried donuts before you fill a peg.",
-  12: "Undo is free. Experiment, then step back."
+  12: "Free Undos run out from here. Plan before you tap."
 };
 const lines = {
   idle: "Tap a stack, then a matching or empty peg.",
@@ -30,7 +31,7 @@ const lines = {
   illegal: "That peg is full or has a different top donut.",
   empty: "Pick a peg with donuts first.",
   undo: "Move undone.",
-  stuck: "No moves left. Undo or restart.",
+  stuck: "No way to finish from here. Go back or restart.",
   win: "Every flavor has its own peg."
 };
 const firstLesson = [
@@ -107,6 +108,10 @@ let celebrating = false;  // hide the win card until the celebration ends
 let introPlaying = false;
 let versionNote = null;
 let lastVisual = null;
+let pendingGift = null;    // free-token pop-up waiting for a quiet moment (no sheet open, before the first move)
+let stuckKey = null;      // JSON of the board the solver proved dead (the board is frozen while it is the live board)
+let lastChecked = "";     // board JSON last sent to the detector
+let marks = null;         // { key, kind: "hint" | "bad", from, to } glow on pegs
 let pendingCap = null;   // peg whose done cap waits for its last ring to land
 
 const active = () => save.active;
@@ -140,9 +145,14 @@ function start(lv, { intro = true } = {}) {
   selection = null;
   feedback = "";
   versionNote = null;
+  stuckKey = null;
+  lastChecked = "";
+  marks = null;
+  pendingGift = eco.claimLevelGift(save, lv.id);
   persist();
   render();
   if (intro) playIntro();
+  setTimeout(maybeGift, 1500);   // after the intro and splash; maybeGift waits while any sheet is open
   const attemptId = save.active.attemptId;
   if (save.active.par == null) {
     const later = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
@@ -175,6 +185,7 @@ function commitMove(from, to) {
     const paid = eco.payWin(save, { attemptId: a.attemptId, stars, prevBest });   // ledger attempt:<id>: pays once
     if (!save.completed.includes(a.id)) save.completed.push(a.id);
     if (!existing) save.rewards[a.id] = { attemptId: a.attemptId, stars, contentVersion: a.version, at: new Date().toISOString() };
+    eco.clearStuck(save, a.id);
     const record = save.rewards[a.id];
     record.best = Math.max(record.best ?? 0, record.stars ?? 0, stars);
     a.result = { stars, moves, par: a.par, firstClear: record.attemptId === a.attemptId, keptStars: record.stars, coins: paid.coins };
@@ -266,7 +277,7 @@ function render() {
   if (!a) return;
   if (!layout || layout.pegs.length !== a.board.length) measure();
   const win = solved(a.board);
-  const stuck = !win && !hasMove(a.board);
+  const dead = !win && (!hasMove(a.board) || isStuck());
   setRingVariant({ patterns: save.settings.patterns || contrast(), contrast: contrast() });
   const root = document.documentElement;
   root.classList.toggle("reduced", reduced());
@@ -309,6 +320,11 @@ function render() {
     svg.classList.toggle("selected", selection === i);
     svg.classList.toggle("valid", valid);
     svg.classList.toggle("done", pegDone(peg) && !hidden && pendingCap !== i);
+    const m = marks && marks.key === boardKey() ? marks : null;
+    svg.classList.toggle("mark-from", !!m && m.kind === "hint" && m.from === i);
+    svg.classList.toggle("mark-to", !!m && m.kind === "hint" && m.to === i);
+    svg.classList.toggle("mark-bad-from", !!m && m.kind === "bad" && m.from === i);
+    svg.classList.toggle("mark-bad-to", !!m && m.kind === "bad" && m.to === i);
     svg.classList.toggle("row-back", p.row === 0 && layout.rows.length === 2);
     const hit = board.children[i];
     Object.assign(hit.style, { left: p.hit.x + "px", top: p.hit.y + "px", width: p.hit.w + "px", height: p.hit.h + "px" });
@@ -322,16 +338,17 @@ function render() {
   updateBubble();
   updateGuide();
 
-  $("undo").disabled = win || !a.history.length;
+  renderToolbar(win, dead);
   $("restart").disabled = false;
   updateNote();
   // panels follow the state
   if (!busy && !celebrating) {
     if (win) openWin();
-    else if (stuck) openStuck();
+    else if (dead) { if (!stuckKey) stuckKey = boardKey(); openStuck(); }
+    else if (!introPlaying) { scheduleDetect(); if (pendingGift) setTimeout(maybeGift, 900); }
   }
   if (!win && $("win-dialog").open) closeDialog($("win-dialog"), true);
-  if (!stuck && $("stuck-dialog").open) closeDialog($("stuck-dialog"), true);
+  if (!dead && $("stuck-dialog").open) closeDialog($("stuck-dialog"), true);
 }
 
 // lifted sprites for the current selection
@@ -430,6 +447,8 @@ function onPeg(i) {
   if (!a) return;
   if (busy || introPlaying) settle();
   if (solved(a.board)) { openWin(); return; }
+  if (isStuck()) return;                    // the board is frozen while the stuck screen is up
+  if (marks) { marks = null; render(); }
   if (selection === i) return deselect();
   if (selection === null) {
     if (!a.board[i].length) {
@@ -895,10 +914,284 @@ async function launchFlow() {
   if (!$("win-dialog").open) await claimChests();
 }
 
-function openStuck() {
+// ------------------------------------------------ Task B: stuck detection, stuck screen, boosters ----
+// The solver runs in a Web Worker with a time budget (game-stuck.mjs), so input is never blocked. "unsolvable" from
+// solve() (not just "no legal move") freezes the board and opens the stuck screen; "limit" or a timeout skips the move.
+const boardKey = () => JSON.stringify(active()?.board);
+const isStuck = () => !!stuckKey && stuckKey === boardKey();
+const events = [];   // telemetry buffer (B11): also dispatched as a "ringsort:telemetry" event for whatever collects it
+function track(name, data = {}) {
+  events.push({ name, ...data, at: Date.now() });
+  if (events.length > 200) events.shift();
+  try { document.dispatchEvent(new CustomEvent("ringsort:telemetry", { detail: { name, ...data } })); } catch { /* ignore */ }
+}
+const runner = stuckLib.createRunner(new URL("game-worker.mjs", import.meta.url).href);
+
+function scheduleDetect() {
   const a = active();
-  $("stuck-undo").hidden = !a.history.length;
-  if (openDialog($("stuck-dialog"))) ($("stuck-undo").hidden ? $("stuck-restart") : $("stuck-undo")).focus({ preventScroll: true });
+  if (!a || stuckKey) return;
+  const key = boardKey();
+  if (key === lastChecked) return;
+  lastChecked = key;
+  const attemptId = a.attemptId;
+  runner({ op: "check", board: a.board }).then((r) => {
+    const cur = active();
+    if (!cur || cur.attemptId !== attemptId || boardKey() !== key) return;   // the player already moved: ignore the old board
+    if (r.timeout || r.status === "limit") { track("solve_limit_hit", { level: cur.id, op: "detect", timeout: !!r.timeout }); return; }
+    if (r.status === "unsolvable") { stuckKey = key; if (!busy && !celebrating) render(); }
+  });
+}
+
+const fmt = (n) => n.toLocaleString("en-US");
+function setPrice(el, { token = false, price = 0 } = {}) {
+  el.replaceChildren();
+  const icon = (src) => { const i = document.createElement("img"); i.src = src; i.alt = ""; i.width = 18; i.height = 18; return i; };
+  if (token) el.append(icon("art/bakery/btn-plus.webp"), "token");
+  else if (!price) el.textContent = "free";
+  else el.append(icon("art/bakery/coin.webp"), fmt(price));
+}
+// Two taps for anything that costs coins: the first arms the button ("Tap again to pay"), the second pays.
+function armed(id, fn) {
+  const btn = $(id);
+  if (btn.disabled) return;
+  if (btn.dataset.price === "0") return fn();
+  if (btn.dataset.armed === "1") {
+    if (Date.now() - Number(btn.dataset.armedAt) < 350) return;   // a double tap is not a confirm
+    disarm(btn);
+    return fn();
+  }
+  const label = btn.querySelector("span");
+  btn.dataset.armed = "1";
+  btn.dataset.armedAt = Date.now();
+  label.dataset.was = label.textContent;
+  label.textContent = "Tap again to pay";
+  clearTimeout(btn._arm);
+  btn._arm = setTimeout(() => disarm(btn), 4000);
+}
+function disarm(btn) {
+  clearTimeout(btn._arm);
+  if (btn.dataset.armed !== "1") return;
+  btn.dataset.armed = "0";
+  const label = btn.querySelector("span");
+  label.textContent = label.dataset.was;
+}
+
+let stuckOpening = false;
+async function openStuck(preview = false) {
+  const a = active();
+  if (!a || $("stuck-dialog").open || stuckOpening || !isStuck()) return;
+  stuckOpening = true;
+  selection = null;
+  const key = boardKey();
+  const info = preview ? { count: 0 } : eco.recordStuck(save, a.id, a);   // one count per stuck event (ledger), so a reload does not recount
+  if (!preview) persist();
+  track("stuck_shown", { level: a.id, depth: a.history.length, preview });
+  if (info.pegGranted) track("pity_triggered", { level: a.id, kind: "peg", count: info.count });
+  else if (info.freeRewind) track("pity_triggered", { level: a.id, kind: "rewind", count: info.count });
+  // +Peg is offered only where the verifier says one extra peg makes the board solvable
+  let rescue = false;
+  if (!eco.attemptEco(a).peg && a.board.length < 9) {
+    const r = await runner({ op: "rescue", board: a.board }, 2000);
+    if (r.timeout) track("solve_limit_hit", { level: a.id, op: "rescue" });
+    rescue = !!r.rescues;
+  }
+  stuckOpening = false;
+  if (active() !== a || boardKey() !== key || !isStuck()) return;
+  fillStuck(a, info, rescue || (preview && params.get("rewind") === "1"));
+  if (openDialog($("stuck-dialog"))) $("stuck-restart").focus({ preventScroll: true });
+}
+function fillStuck(a, info, rescue) {
+  const rc = eco.rewindCost(save, a.id);
+  const rewind = $("stuck-rewind"), peg = $("stuck-peg");
+  const pc = eco.pegCost(save);
+  const coins = save.wallet.coins;
+  for (const b of [rewind, peg]) disarm(b);
+  const sample = params.get("preview") === "stuck" && params.get("rewind") === "1";   // review sample: history may be empty
+  rewind.hidden = !a.history.length && !sample;
+  rewind.dataset.price = rc.price;
+  rewind.disabled = rc.price > coins;
+  setPrice($("stuck-rewind-price"), { price: rc.price });
+  peg.hidden = !rescue;
+  peg.dataset.price = pc.price;
+  peg.disabled = !pc.token && pc.price > coins;
+  setPrice($("stuck-peg-price"), pc);
+  const poor = (!rewind.hidden && rewind.disabled) || (!peg.hidden && peg.disabled);
+  $("stuck-poor").hidden = !poor;
+  $("stuck-balance").textContent = fmt(coins) + " coins";
+  $("stuck-text").textContent = info.pegGranted ? "A free +Peg token is waiting for you."
+    : rc.why === "pity" ? "A free rewind is waiting."
+    : rc.why === "early" ? "Going back is free on early levels."
+    : "No way to finish from here.";
+}
+
+let rewinding = false;
+async function doRewind() {
+  const a = active();
+  if (rewinding || !a || !isStuck()) return;
+  rewinding = true;
+  const label = $("stuck-rewind").querySelector("span");
+  const was = label.textContent;
+  label.textContent = "Looking back…";
+  try {
+    const r = await runner({ op: "rewind", history: a.history, board: a.board }, stuckLib.DEEP_BUDGET_MS);
+    if (active() !== a || !isStuck()) return;
+    if (r.timeout) { track("solve_limit_hit", { level: a.id, op: "rewind" }); $("stuck-text").textContent = "That took too long. Nothing was charged: try again or restart."; return; }
+    if (!r.target) { $("stuck-rewind").hidden = true; $("stuck-text").textContent = "No safe spot found. Restart is free."; return; }
+    const paid = eco.takeRewind(save, a.id, a);   // flat price whatever the depth, charged once (ledger)
+    if (!paid.ok) { fillStuck(a, { count: 0 }, !$("stuck-peg").hidden); return; }
+    const { board, index, wrong } = r.target;
+    a.board = board;
+    a.history = a.history.slice(0, index);
+    selection = null; stuckKey = null; lastChecked = "";
+    marks = wrong ? { key: boardKey(), kind: "bad", from: wrong[0], to: wrong[1] } : null;
+    persist();
+    refreshCoins();
+    closeDialog($("stuck-dialog"), true);
+    track("stuck_action", { type: "rewind" });
+    track("booster_used", { type: "rewind", price: paid.spent });
+    if (wrong) { const t = `Not this one: peg ${wrong[0] + 1} to peg ${wrong[1] + 1}`; say(t, 6000); toast(t); }
+    render();
+  } finally {
+    rewinding = false;
+    label.textContent = was;
+  }
+}
+
+function doPeg(source) {
+  const a = active();
+  if (!a || solved(a.board)) return;
+  const res = eco.takePeg(save, a);
+  if (!res.ok) { toast(res.reason === "dup" ? "This level already has its extra peg." : "Not enough coins for a peg."); return; }
+  a.board = [...a.board.map((p) => [...p]), []];
+  a.history = a.history.map((b) => [...b.map((p) => [...p]), []]);   // keep every saved position the same width, so Rewind still works
+  selection = null; stuckKey = null; lastChecked = ""; marks = null;
+  persist();
+  refreshCoins();
+  closeDialog($("stuck-dialog"), true);
+  if (source === "stuck") track("stuck_action", { type: "peg" });
+  track("booster_used", { type: "peg", price: res.spent });
+  toast("An extra peg for this try.");
+  render();
+}
+
+// Small bottom sheet for paying or being told you can't. Options: [{ label, price, token, disabled, run }].
+let payDone = false;
+function payClose() { closeDialog($("pay-dialog")); }
+function openPay({ title, text, options = [], poor = false, restart = false, closeLabel = "Not now" }) {
+  $("pay-title").textContent = title;
+  $("pay-text").textContent = text;
+  $("pay-balance-num").textContent = fmt(save.wallet.coins) + " coins";
+  $("pay-balance").hidden = !poor;
+  const box = $("pay-actions");
+  payDone = false;
+  const add = (label, cls, fn, price) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "wide-btn " + cls;
+    const s = document.createElement("span");
+    s.textContent = label;
+    b.append(s);
+    if (price !== undefined) { const p = document.createElement("b"); p.className = "price"; setPrice(p, price); b.append(p); }
+    b.addEventListener("click", () => { if (payDone) return; payDone = true; fn(); });   // one tap only: no double charge
+    box.append(b);
+    return b;
+  };
+  box.replaceChildren();
+  if (poor) {
+    add("Get coins", "honey", () => { payClose(); openCoins(); });
+    if (restart) add("Restart", "mint", () => { payClose(); start(level(active().id) ?? { ...active(), board: active().initial }); });
+  } else {
+    for (const o of options) {
+      const b = add(o.label, "honey", () => { payClose(); o.run(); }, { token: o.token, price: o.price ?? 0 });
+      b.disabled = !!o.disabled;
+    }
+  }
+  add(closeLabel, "quiet", payClose);
+  if (openDialog($("pay-dialog"))) box.querySelector("button:not(:disabled)")?.focus({ preventScroll: true });
+}
+function openCoins() { openDialog($("coins-dialog")); }   // placeholder: the shop is Task C
+
+// The token is already granted; the pop-up only tells the player. It never opens over another sheet and
+// only before the first move, so it cannot stack on the stuck, win or confirm sheets.
+function maybeGift() {
+  const a = active();
+  if (!pendingGift || !a || busy || introPlaying || celebrating) return;
+  if (a.history.length || solved(a.board)) { pendingGift = null; return; }
+  if (isStuck() || stuckOpening || document.querySelector("dialog[open]") || !$("lobby").hidden || $("splash")) return;
+  const gift = pendingGift;
+  pendingGift = null;
+  showGiftToken(gift);
+}
+function showGiftToken(gift) {
+  const what = gift.hints ? "a free Hint token" : "a free +Peg token";
+  openPay({ title: "A gift from the chef", text: `Here is ${what}. It is used before any coins.`, closeLabel: "Thanks!" });
+}
+
+let hinting = false;
+async function useHint() {
+  settle();
+  const a = active();
+  if (!a || solved(a.board) || isStuck() || hinting) return;
+  hinting = true;
+  try {
+    const key = boardKey();
+    const r = await runner({ op: "hint", board: a.board }, 3000);
+    if (active() !== a || boardKey() !== key) return;
+    if (r.timeout || !r.move) {
+      if (r.status === "unsolvable") { stuckKey = key; render(); return; }   // the solver proves a dead end the move check had skipped
+      track("solve_limit_hit", { level: a.id, op: "hint" });
+      toast("No hint for this board right now. Nothing was charged.");
+      return;
+    }
+    const finish = () => {
+      if (active() !== a || boardKey() !== key) return;
+      const paid = eco.takeHint(save, a);
+      if (!paid.ok) { toast("Not enough coins for a hint."); return; }
+      persist();
+      refreshCoins();
+      marks = { key, kind: "hint", from: r.move[0], to: r.move[1] };
+      if (!paid.repeat) track("booster_used", { type: "hint", price: paid.spent, token: paid.token });
+      const t = `Hint: peg ${r.move[0] + 1} to peg ${r.move[1] + 1}`;
+      say(t, 6000);
+      toast(t);
+      render();
+    };
+    const cost = eco.hintCost(save, a);
+    if (cost.price === 0) return finish();   // token first, or the same hint again
+    if (cost.price > save.wallet.coins) return openPay({ title: "Not enough coins", text: `A hint costs ${fmt(cost.price)} coins.`, poor: true });
+    openPay({ title: "Show the next move?", text: "The chef points at the next step.", options: [{ label: "Show hint", price: cost.price, run: finish }] });
+  } finally { hinting = false; }
+}
+
+function buyPegFromBar() {
+  settle();
+  const a = active();
+  if (!a || solved(a.board) || isStuck()) return;
+  if (eco.attemptEco(a).peg) { toast("This level already has its extra peg."); return; }
+  const c = eco.pegCost(save);
+  if (!c.token && c.price > save.wallet.coins) return openPay({ title: "Not enough coins", text: `An extra peg costs ${fmt(c.price)} coins.`, poor: true, restart: true });
+  openPay({ title: "Add an extra peg?", text: "One more empty peg for this try only.", options: [{ label: "Add peg", token: c.token, price: c.price, run: () => doPeg("bar") }] });
+}
+
+// Toolbar: the Undo label shows what the next Undo costs; nothing is clickable on a stuck board.
+function renderToolbar(win, dead) {
+  const a = active();
+  const plan = eco.undoPlan(a.id, a, dead);
+  let label = "Undo", aria = "Undo";
+  if (plan.kind === "free3") { label = "Undo " + plan.left; aria = `Undo, ${plan.left} free left`; }
+  else if (plan.kind === "credit") { label = "Undo " + plan.credits; aria = `Undo, ${plan.credits} bought left`; }
+  else if (plan.kind === "pay") { label = "Undo " + plan.price; aria = `Undo, ${plan.price} coins`; }
+  $("undo-cap").textContent = label;
+  $("undo").setAttribute("aria-label", aria);
+  $("undo").disabled = win || dead || !a.history.length;
+  $("hint").disabled = win || dead;
+  const hasPeg = !!eco.attemptEco(a).peg;
+  $("add-peg").disabled = win || dead || hasPeg;
+  $("add-peg").setAttribute("aria-label", hasPeg ? "Extra peg already added" : "Add a peg");
+  const badge = (el, token, count, price) => { el.textContent = token ? String(count) : fmt(price); el.classList.toggle("token", token); };
+  badge($("hint-badge"), save.wallet.hints > 0, save.wallet.hints, eco.PRICES.HINT);
+  badge($("peg-badge"), save.wallet.pegs > 0, save.wallet.pegs, eco.PRICES.PEG);
+  if (hasPeg) $("peg-badge").textContent = "";
 }
 let confirmResolve = null;
 function confirmSheet(title, text, ok) {
@@ -1223,7 +1516,7 @@ function toast(text) {
 function wire() {
   $("map-close").append(icon("close"));
   $("settings-close").append(icon("close"));
-  for (const el of document.querySelectorAll("#home, .home-face")) el.prepend(icon("home"));
+  for (const el of document.querySelectorAll("#home, .home-face, .stuck-home")) el.prepend(icon("home"));
   $("note-close").append(icon("close", "icon icon-sm"));
   $("rotate-icon").append(icon("rotate", "icon rotate-glyph"));
   $("guide").append(svgEl("svg", { viewBox: "0 0 40 44", class: "guide-arrow", "aria-hidden": "true" }, [
@@ -1231,6 +1524,8 @@ function wire() {
     svgEl("path", { d: "M16 8h5v12", fill: "none", stroke: "#FFF6D0", "stroke-width": 2.5, "stroke-linecap": "round" })
   ]));
   $("undo").addEventListener("click", undo);
+  $("hint").addEventListener("click", useHint);
+  $("add-peg").addEventListener("click", buyPegFromBar);
   $("restart").addEventListener("click", async () => {
     settle();
     const a = active();
@@ -1244,9 +1539,6 @@ function wire() {
   $("lobby-play").addEventListener("click", () => { unlockAudio(); playFromLobby(); });
   $("lobby-levels").addEventListener("click", () => openMap());
   $("lobby-settings").addEventListener("click", () => { renderSettings(); openDialog($("settings-dialog")); });
-  // Hint and +Peg are art only for now (no logic yet): they say so instead of acting
-  $("hint").addEventListener("click", () => toast("Hints are coming soon."));
-  $("add-peg").addEventListener("click", () => toast("Extra pegs are coming soon."));
   $("win-replay").addEventListener("click", () => afterWin(() => start(level(active().id))));
   $("home").addEventListener("click", async () => {
     settle();
@@ -1263,8 +1555,12 @@ function wire() {
   $("settings-done").addEventListener("click", () => closeDialog($("settings-dialog")));
   $("map-close").addEventListener("click", () => closeDialog($("map-dialog")));
   $("win-levels").addEventListener("click", () => afterWin(() => { closeDialog($("win-dialog"), true); openMap(); }));
-  $("stuck-undo").addEventListener("click", () => { closeDialog($("stuck-dialog"), true); undo(); });
-  $("stuck-restart").addEventListener("click", () => { closeDialog($("stuck-dialog"), true); start(level(active().id)); });
+  $("stuck-rewind").addEventListener("click", () => armed("stuck-rewind", doRewind));
+  $("stuck-peg").addEventListener("click", () => armed("stuck-peg", () => doPeg("stuck")));
+  $("stuck-restart").addEventListener("click", () => { track("stuck_action", { type: "restart" }); closeDialog($("stuck-dialog"), true); start(level(active().id) ?? { ...active(), board: active().initial }); });
+  $("stuck-coins").addEventListener("click", openCoins);
+  $("coins-back").addEventListener("click", () => closeDialog($("coins-dialog")));
+  $("pay-dialog").addEventListener("cancel", () => { payClose(); });
   $("confirm-ok").addEventListener("click", () => answerConfirm(true));
   $("confirm-cancel").addEventListener("click", () => answerConfirm(false));
   $("confirm-dialog").addEventListener("cancel", () => { confirmResolve?.(false); confirmResolve = null; });
@@ -1274,6 +1570,7 @@ function wire() {
   $("note-restart").addEventListener("click", () => { versionNote = null; start(level(active().id)); });
   $("note-close").addEventListener("click", () => { versionNote = null; updateNote(); });
   for (const d of document.querySelectorAll("dialog")) {
+    d.addEventListener("close", () => setTimeout(maybeGift, 300));
     d.addEventListener("click", (e) => { if (e.target === d && (d.id === "settings-dialog" || d.id === "map-dialog")) closeDialog(d); });
   }
   // interruption safety: finish all motion at once; the state is already saved
@@ -1306,19 +1603,38 @@ function confettiClear() { $("fx-top").replaceChildren(); }
 function undo() {
   settle();
   const a = active();
-  if (!a.history.length || solved(a.board)) return;
+  if (!a.history.length || solved(a.board) || isStuck()) return;   // on a stuck board only Rewind goes back
+  const plan = eco.undoPlan(a.id, a, false);
+  if (plan.kind !== "pay") return applyUndo("one");
+  const coins = save.wallet.coins;
+  openPay({
+    title: coins < plan.price ? "Not enough coins" : "Out of free Undos",
+    text: coins < plan.price ? `An Undo costs ${fmt(plan.price)} coins. You can restart for free.` : "Take back this move?",
+    poor: coins < plan.price,
+    restart: true,
+    options: [
+      { label: "Undo once", price: plan.price, disabled: coins < plan.price, run: () => applyUndo("one") },
+      { label: "3 Undos", price: plan.pack, disabled: coins < plan.pack, run: () => applyUndo("pack") }
+    ]
+  });
+}
+function applyUndo(choice) {
+  const a = active();
+  if (!a.history.length || solved(a.board) || isStuck()) return;
+  const res = eco.takeUndo(save, a.id, a, false, choice);
+  if (!res.ok) { toast("Not enough coins for an Undo."); return; }
   a.board = a.history.pop();
-  selection = null;
+  selection = null; marks = null;
   persist();
-  closeDialog($("stuck-dialog"), true);
+  refreshCoins();
+  if (res.spent) track("booster_used", { type: "undo", price: res.spent });
   say(lines.undo, 1600);
   render();
 }
-
 function validActive(a) {
   return a && catalog.some((l) => l.id === a.id) && typeof a.name === "string" && typeof a.attemptId === "string" &&
-    !validateBoard(a.initial) && !validateBoard(a.board, { allowSolved: true }) && Array.isArray(a.history) &&
-    a.history.every((b) => !validateBoard(b)) && a.board.length === a.initial.length;
+    !validateBoard(a.initial) && stuckLib.validLive(a.board) && Array.isArray(a.history) &&
+    a.history.every((b) => stuckLib.validLive(b) && b.length === a.board.length) && a.board.length === a.initial.length + (a.eco?.peg ? 1 : 0);
 }
 
 async function fetchLevels() {
@@ -1379,7 +1695,11 @@ async function boot() {
   if (toLobby) showLobby();
   if (screen === "map") { openMap(params.get("at") || "current"); }
   if (preview === "win") { settle(); const st = Number(params.get("stars")) || 3; openWin({ stars: st, moves: 14, par: 12, firstClear: true, coins: eco.firstClearCoins(st) }); }
-  else if (preview === "stuck") { settle(); openStuck(); }
+  else if (preview === "stuck") {
+    settle(); stuckKey = boardKey();
+    if (params.get("rewind") === "1") { marks = { key: boardKey(), kind: "bad", from: 0, to: 1 }; render(); }   // sample ghost of the wrong move
+    openStuck(true);
+  }   // review only: counts nothing
   hideSplash();
   refreshCoins();
   persist();
@@ -1397,6 +1717,7 @@ async function boot() {
 window.candleSort = {
   state: () => JSON.parse(JSON.stringify({ save, selection, busy, celebrating })),
   layout: () => layout,
+  events: () => events.slice(),
   settle
 };
 
