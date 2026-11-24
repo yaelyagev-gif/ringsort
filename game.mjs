@@ -5,6 +5,7 @@ import { installSprite, drawPeg, ringSprite, ringColors, colorNames, icon, starI
 import { computeLayout } from "./game-layout.mjs";
 import * as eco from "./economy.mjs";
 import * as stuckLib from "./game-stuck.mjs";
+import { starsFor, parOf } from "./stars.mjs";
 import { play, settled, wait, settleAll, setSound, unlockAudio, sound, setHaptics, haptic, canVibrate, starBurst, confetti } from "./game-fx.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -122,12 +123,9 @@ const contrast = () => save.settings.contrast || matchMedia("(prefers-contrast: 
 const topRun = (peg) => { if (!peg.length) return 0; let n = 1; while (peg.at(-1 - n) === peg.at(-1)) n++; return n; };
 const ringColor = (c) => ringColors[c]?.light ?? "#FFE9A0";
 const pegDone = (peg) => peg.length === capacity && peg.every((c) => c === peg[0]);
-export function starsFor(moves, par) {
-  if (moves <= par) return 3;
-  if (moves <= par + Math.max(2, Math.ceil(par / 2))) return 2;
-  return 1;
-}
-function parOf(board) {
+export { starsFor };
+// Fallback for old saved attempts that carry no par: the same number tools/add-par.mjs stores in levels.json.
+function solvePar(board) {
   const r = solve(board);
   return r.status === "solved" ? r.moves.length : null;
 }
@@ -139,7 +137,7 @@ function start(lv, { intro = true } = {}) {
   save.active = {
     id: lv.id, name: lv.name, difficulty: lv.difficulty, version: lv.version,
     attemptId: uuid(), initial: cloneBoard(lv.board), board: cloneBoard(lv.board), history: [],
-    par: Number.isInteger(lv.par) ? lv.par : null, startedAt: Date.now(),
+    par: parOf(lv), startedAt: Date.now(),
     ...(typeof lv.teaches === "string" ? { teaches: lv.teaches } : {})
   };
   selection = null;
@@ -158,7 +156,7 @@ function start(lv, { intro = true } = {}) {
     const later = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
     later(() => {
       const a = active();
-      if (a?.attemptId === attemptId && a.par == null) { a.par = parOf(a.initial); persist(); }
+      if (a?.attemptId === attemptId && a.par == null) { a.par = solvePar(a.initial); persist(); }
     });
   }
 }
@@ -174,7 +172,7 @@ function commitMove(from, to) {
   a.board = next;
   const won = solved(next);
   if (won) {
-    if (a.par == null) a.par = parOf(a.initial) ?? a.history.length;
+    if (a.par == null) a.par = solvePar(a.initial) ?? a.history.length;
     const moves = a.history.length;
     const stars = starsFor(moves, a.par);
     const wasCleared = save.completed.includes(a.id) || !!save.rewards[a.id];

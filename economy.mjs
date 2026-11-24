@@ -350,3 +350,46 @@ export function claimLevelGift(save, levelId) {
   if (levelId === RULES.PEG_GIFT_LEVEL && !("gift:peg:L15" in w.ledger)) { w.ledger["gift:peg:L15"] = addPegs(save, 1); return { hints: 0, pegs: 1 }; }
   return null;
 }
+
+// ---- cloud save (docs/team/22): the only numbers the server, the client and the tests read ----
+// Names follow the spec; the amounts are the REWARDS / PRICES blocks above (Economy v5).
+export const firstClear = (stars) => firstClearCoins(stars);
+export const replayPerStar = REWARDS.REPLAY_PER_STAR;
+export const chestReward = (n) => ({ coins: chestCoins(n), hints: REWARDS.CHEST_HINTS });
+export const GIFT_TABLE = DAILY_COINS;
+// pity grants (Economy Task A): a peg after a stuck level; the Rewind pity grants no tokens
+export const PITY = { peg: 1, rewind: 0 };
+// item = what the player buys or uses; token = which wallet counter it fills (null: coins only, used on the spot)
+export const ITEMS = {
+  hint: { price: PRICES.HINT, token: "hints" },
+  peg: { price: PRICES.PEG, token: "pegs" },
+  undo: { price: PRICES.UNDO, token: null },
+  undo_pack: { price: PRICES.UNDO_PACK_3, token: null },
+  rewind: { price: PRICES.REWIND, token: null }
+};
+
+// JS reference of the price rule (section 3). rows: [{levelId, stars}] in pay order, any mix of attempt/retro.
+// Returns the coins each row pays. A level's first row (running best 0 / none) pays first clear.
+export function priceLevelRows(rows) {
+  const best = new Map();
+  return rows.map(({ levelId, stars }) => {
+    const prev = best.get(levelId) ?? 0;
+    best.set(levelId, Math.max(prev, stars));
+    return prev === 0 ? firstClear(stars) : replayPerStar * Math.max(0, stars - prev);
+  });
+}
+
+// The constants for SQL (`p_rules` of apply_sync / merge_users). SQL holds only the formula shape.
+export function sqlRules() {
+  return {
+    start: START_COINS,
+    firstClear: { base: REWARDS.FIRST_CLEAR_BASE, perStar: REWARDS.PER_STAR },
+    replayPerStar,
+    levelsPerChapter: LEVELS_PER_CHAPTER,
+    chest: { base: REWARDS.CHEST_BASE, perChapter: REWARDS.CHEST_PER_CHAPTER, hints: REWARDS.CHEST_HINTS },
+    gift: [...GIFT_TABLE],
+    pity: { ...PITY },
+    caps: { coins: COIN_CAP, tokens: TOKEN_CAP },
+    items: Object.fromEntries(Object.entries(ITEMS).map(([k, v]) => [k, { ...v }]))
+  };
+}
